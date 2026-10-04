@@ -46,6 +46,7 @@
   const soundIconEl = document.getElementById('sound-icon');
   const btnPauseToggle = document.getElementById('btn-pause-toggle');
   const btnRulesToggle = document.getElementById('btn-rules-toggle');
+  const btnArtillery = document.getElementById('btn-artillery');
 
   // Wirtualne przyciski dotykowe (Mobile)
   const touchUp = document.getElementById('touch-up');
@@ -125,6 +126,9 @@
   let professorFreezeTimer = 0;   // 3.5s cyber-freeze Gemini AI
   let hasShield = false;          // Tarcza z Legitymacji ALK
   let invulnerableTimer = 0;      // Chwilowa nietykalność po uderzeniu w tarczę
+  let artilleryCooldown = 0;      // Cooldown artylerii ratunkowej (900 klatek = 15s)
+  let statusText = '';            // Dynamiczny tekst statusu (np. Artyleria)
+  let statusTextTimer = 0;        // Czas wyświetlania statusText
   let gameStartTime = 0;
   let elapsedTime = 0;
   let quoteTimer = 0;
@@ -264,6 +268,13 @@
     professorFreezeTimer = 0;
     hasShield = false;
     invulnerableTimer = 0;
+    artilleryCooldown = 0;
+    statusText = '';
+    statusTextTimer = 0;
+    if (btnArtillery) {
+      btnArtillery.disabled = false;
+      btnArtillery.textContent = '💣 Wprowadź Artylerię (R)';
+    }
     gameStartTime = Date.now();
     elapsedTime = 0;
     quoteTimer = 0;
@@ -318,6 +329,12 @@
     // Wymaganie 2: Sprint pod Spacją LUB Shiftem
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') {
       keys.sprint = true;
+      e.preventDefault();
+    }
+
+    // Klawisz R: Wprowadź Artylerię
+    if (e.code === 'KeyR') {
+      fireArtillery();
       e.preventDefault();
     }
 
@@ -406,6 +423,92 @@
     resetGame();
     gameState = 'PLAYING';
   });
+
+  // Obsługa kliknięcia przycisku artylerii
+  btnArtillery?.addEventListener('click', (e) => {
+    e.preventDefault();
+    fireArtillery();
+  });
+
+  // --------------------------------------------------------------------------
+  // ARTYLERIA DZIEKAŃSKA (Przycisk ratunkowy / Klawisz R):
+  // - Odrzuca profesora do kąta mapy (x: 60, y: 60)
+  // - Ogłusza profesora na 3 sekundy (freezeTimer = 180)
+  // - Dźwięk wybuchu 'explosion', dymek z cytatem i statusText
+  // - Cooldown 900 klatek (15s) z odliczaniem na przycisku
+  // --------------------------------------------------------------------------
+  function fireArtillery() {
+    // Jeśli gra nie trwa lub cooldown > 0 -> nic nie rób
+    if (gameState !== 'PLAYING' || artilleryCooldown > 0) return;
+
+    // Uruchom dźwięk SoundSystem.play('explosion')
+    if (typeof SoundSystem !== 'undefined' && typeof SoundSystem.play === 'function') {
+      SoundSystem.play('explosion');
+    } else {
+      playSound('explosion');
+    }
+
+    // Natychmiast cofnij profesora do kąta mapy (x: 60, y: 60)
+    professor.x = 60;
+    professor.y = 60;
+
+    // Ogłusz profesora na 3 sekundy (freezeTimer = 180)
+    professorFreezeTimer = 180;
+    const freezeTimer = 180;
+    professor.freezeTimer = 180;
+
+    // Wyświetl nad nim dymek: 'Moje arkusze ocen! Odrzuciło mnie do kąta!'
+    setSpeechQuote('Moje arkusze ocen! Odrzuciło mnie do kąta!');
+    quoteTimer = 0;
+
+    // Zmień statusText na '💥 ARTYLERIA DZIEKAŃSKA TRAFIŁA!' w kolorze czerwonym
+    statusText = '💥 ARTYLERIA DZIEKAŃSKA TRAFIŁA!';
+    statusTextTimer = 180; // 3 sekundy przy 60 FPS
+    if (professorDistanceStatusEl) {
+      professorDistanceStatusEl.textContent = statusText;
+      professorDistanceStatusEl.style.color = '#ef4444';
+      professorDistanceStatusEl.className = 'radar-status';
+    }
+
+    // Dodaj efektowne cząsteczki eksplozji i pływający tekst
+    addFloatingText(60, 40, statusText, '#ef4444');
+    for (let i = 0; i < 30; i++) {
+      const pAngle = Math.random() * Math.PI * 2;
+      const pSpeed = 2 + Math.random() * 5.5;
+      particles.push({
+        x: 60,
+        y: 60,
+        vx: Math.cos(pAngle) * pSpeed,
+        vy: Math.sin(pAngle) * pSpeed,
+        color: ['#ef4444', '#f59e0b', '#fbbf24', '#dc2626'][Math.floor(Math.random() * 4)],
+        radius: 3 + Math.random() * 4,
+        life: 40 + Math.random() * 20
+      });
+    }
+
+    // Ustaw artilleryCooldown = 900 (15 sekund przy 60 FPS)
+    artilleryCooldown = 900;
+    if (btnArtillery) {
+      btnArtillery.disabled = true;
+      btnArtillery.textContent = '💣 Odnawianie... 15s';
+    }
+  }
+
+  function updateArtillery() {
+    if (artilleryCooldown > 0) {
+      artilleryCooldown--;
+      const secondsLeft = Math.ceil(artilleryCooldown / 60);
+      if (btnArtillery) {
+        btnArtillery.disabled = true;
+        btnArtillery.textContent = `💣 Odnawianie... ${secondsLeft}s`;
+      }
+    } else {
+      if (btnArtillery && btnArtillery.disabled) {
+        btnArtillery.disabled = false;
+        btnArtillery.textContent = '💣 Wprowadź Artylerię (R)';
+      }
+    }
+  }
 
   // --------------------------------------------------------------------------
   // 2. LOGIKA GRACZA (STUDENT):
@@ -762,18 +865,26 @@
     // Dystans i status zagrożenia
     const dist = Math.hypot(player.x - professor.x, player.y - professor.y);
     if (professorDistanceStatusEl) {
-      if (professorFreezeTimer > 0) {
-        professorDistanceStatusEl.textContent = '❄️ Sparaliżowany!';
-        professorDistanceStatusEl.className = 'radar-status status-calm';
-      } else if (dist < 120) {
-        professorDistanceStatusEl.textContent = 'Tuż za Tobą!';
-        professorDistanceStatusEl.className = 'radar-status status-danger';
-      } else if (dist < 260) {
-        professorDistanceStatusEl.textContent = 'Goni Cię!';
-        professorDistanceStatusEl.className = 'radar-status status-alert';
+      if (statusTextTimer > 0) {
+        statusTextTimer--;
+        professorDistanceStatusEl.textContent = statusText;
+        professorDistanceStatusEl.style.color = '#ef4444';
+        professorDistanceStatusEl.className = 'radar-status';
       } else {
-        professorDistanceStatusEl.textContent = 'Węszy na kampusie';
-        professorDistanceStatusEl.className = 'radar-status status-calm';
+        professorDistanceStatusEl.style.color = '';
+        if (professorFreezeTimer > 0) {
+          professorDistanceStatusEl.textContent = '❄️ Sparaliżowany!';
+          professorDistanceStatusEl.className = 'radar-status status-calm';
+        } else if (dist < 120) {
+          professorDistanceStatusEl.textContent = 'Tuż za Tobą!';
+          professorDistanceStatusEl.className = 'radar-status status-danger';
+        } else if (dist < 260) {
+          professorDistanceStatusEl.textContent = 'Goni Cię!';
+          professorDistanceStatusEl.className = 'radar-status status-alert';
+        } else {
+          professorDistanceStatusEl.textContent = 'Węszy na kampusie';
+          professorDistanceStatusEl.className = 'radar-status status-calm';
+        }
       }
     }
   }
@@ -1093,6 +1204,7 @@
         setSpeechQuote(PROFESSOR_QUOTES[currentQuoteIndex]);
       }
 
+      updateArtillery();
       updatePlayer();
       updateProfessor();
       updateItems();

@@ -69,6 +69,9 @@ class SoundSystem {
       case 'win':
         this._playWin();
         break;
+      case 'explosion':
+        this._playExplosion();
+        break;
       default:
         console.warn(`SoundSystem: Nieznany typ dźwięku "${type}"`);
     }
@@ -216,6 +219,36 @@ class SoundSystem {
       osc.start(now + note.t);
       osc.stop(now + note.t + note.d + 0.02);
     });
+  }
+
+  // 7. 'explosion': głęboki, niski dźwięk wybuchu o opadającej częstotliwości z fali sawtooth
+  _playExplosion() {
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    // Głęboki zjazd basu o opadającej częstotliwości od 150 Hz w dół do 25 Hz
+    osc.frequency.setValueAtTime(150, now);
+    osc.frequency.exponentialRampToValueAtTime(25, now + 0.65);
+
+    // Silne uderzenie (punch) i powolny spadek głośności
+    gain.gain.setValueAtTime(0.4, now);
+    gain.gain.linearRampToValueAtTime(0.35, now + 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.72);
+  }
+
+  // Bezpośrednie wywołanie statyczne SoundSystem.play(type)
+  static play(type) {
+    if (window.SoundSystem && typeof window.SoundSystem.play === 'function') {
+      window.SoundSystem.play(type);
+    }
   }
 }
 
